@@ -1,0 +1,184 @@
+---
+title: "Scraping Inauguration Speeches"
+author: "Pradeep Adhokshaja"
+date: "29 March 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Libraries
+
+`rvest` is a web scraping library by [Hadley Wickham](https://CRAN.R-project.org/package=rvest).In this project, we will try to scrape inaugural speeches of US Presidents from http://www.bartleby.com/124/. This webpage is made of links to the Presidents' Speeches.
+
+```{r}
+library(rvest)
+library(stringr)
+library(tidyr)
+library(methods))
+```
+
+## Getting Links that hold the speeches
+
+
+
+```{r}
+url <- "http://www.bartleby.com/124/"
+site <- read_html(url)
+
+links <- html_nodes(site,"a") %>% 
+  html_attr("href")
+
+links <-links[grepl("pres",links)==T]
+#links <- str_sub(links,start=3)
+
+for (i in 1:length(links)){
+  links[i] <- paste("http://www.bartleby.com/124/",links[i],sep="")
+  
+}
+```
+
+The set of links for the Presidential Inaugural Addresses can be found [here](http://www.bartleby.com/124/). The links are in the form `http://www.bartleby.com/124/pres(number).html`. We filter out the links that do not contain the word `pres` by using the `grepl` function.After extracting these, we add the prefix `http://www.bartleby.com/124/`. The links will then look like the following.
+
+```{r}
+head(links)
+
+
+```
+
+
+## Getting Information from the links
+
+After we have got a list of the links we have to extract the text information about each inauguration. These include the date, speech and president's name. Before we start extracting these information, we need to understand the underlying structure of each page. For that very reason, we will look at a single link  first.
+
+```{r}
+
+
+
+url <- links[4]
+site <- read_html(url) # xml_document
+
+title <- html_nodes(site,"center") %>% html_text() 
+#print("Title:",title)
+
+#person <- html_nodes(site,"h2") %>% html_text() %>% paste(collapse="")
+
+text <- html_nodes(site,"td") %>% html_text()
+
+
+head(text,1)
+
+
+
+
+
+```
+
+
+From the above, we can see that the speech is embedded amongst javascript and HTML code. To effectively extract the speeches we need to perform some filteration. The `text_clean()` function defined below removes escape characters,digits,
+and text pertaining to the functionality of the page(For e.g, PREVIOUS,NEXT etc).
+
+```{r}
+## clean text function
+
+title_clean <- function(title){
+  
+  title <- title[2]
+  
+  return(title)
+  
+}
+text_clean <- function(text){
+  for(i in 1:length(text)){
+    
+    text[i]<- gsub("[\r\n\t]"," ",text[i])
+    text[i]<- gsub("[0-9]"," ",text[i])
+    text[i]<- ifelse(grepl("PREVIOUS|NEXT|CONTENTS|RECORD|BIBLIOGRAPHIC|Reference|R.L.Wells|google|bName|javascript|Bartleby.com",text[i])," ",text[i])
+    text[i]<- ifelse(grepl("Inaugural",text[i]),"",text[i])
+    
+  }
+  
+  text <- text %>% paste(collapse="")
+  return(text)
+  
+}
+
+
+
+
+
+
+
+```
+
+
+## Copying Information into a data frame
+
+ The extracted text is stored in a data.frame with two rows `title` and `text`. We loop through the `links` and assign each row to one presidential inaugural address
+
+
+```{r}
+inaug_speech <- data.frame(title=character(),text=character(),stringsAsFactors = F)
+for (i in 1:length(links)){
+  url <- links[i]
+  site <- read_html(url) # xml_document
+  title <- html_nodes(site,"center") %>% html_text() 
+  text <- html_nodes(site,"td") %>% html_text()
+  text <- text_clean(text)
+  title <- title_clean(title)
+  #print(title)
+  inaug_speech[i,]<- c(title,text)
+}
+
+```
+
+## Looking at the data frame
+
+Now that we have created our data frame, we need to inspect it. We will look at the `title` column, as the `text` column takes a lot of space.
+
+### Title Column
+
+```{r}
+
+head(inaug_speech$title,5)
+
+
+```
+
+
+
+
+We see that the first 3 rows of the data frame do not talk about the presidential address. So we remove them.Also, the first 4 Presidential addresses also include the data pertaining to location of the speech.We need to remove that.
+
+```{r}
+
+inaug_speech <- inaug_speech[4:61,]
+location <- c("In the City of New York","In the City of Philadelphia","In the Washington, D.C.")
+
+inaug_speech$title <- gsub("In the City of New York|In the City of Philadelphia|In the Washington, D.C.","",inaug_speech$title)
+
+head(inaug_speech$title)
+
+```
+
+Now, we have two columns, namely `text` and `title`. The `title` consists of the Name of the President,Inaugural Address Information and the date. We can split this into three columns by replacing the `\r\n\t` escape characters with `*` and then using `tidyr`'s `separate()` function to seperate them into three columns.
+
+
+
+```{r}
+
+inaug_speech$title <- gsub("[\r\n]","*",inaug_speech$title)
+inaug_speech<- separate(inaug_speech,title,c("Name","Inaugural Address","Date"),sep="[*]+")
+
+write.csv(inaug_speech,"inaug_speeches.csv")
+
+head(inaug_speech[,1:3])
+
+
+
+
+```
+
+The data frame now consists of the four columns ; Name,Inaugural Address,Date and text. The text column has not been displayed due to space constraints.
